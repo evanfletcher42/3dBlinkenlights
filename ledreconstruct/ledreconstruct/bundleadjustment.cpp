@@ -526,9 +526,9 @@ bool BundleAdjuster::InitCameraPosePnP(int nFrameIdx)
 		return false;
 	}
 
-	// Sanity check: At least 50% of input points need to be inliers
+	// Sanity check: Most input points need to be inliners
 	//if (inliers.size() < mapPoints.size() / 2)
-	if(inliers.size() < mapPoints.size() * 0.75)
+	if(inliers.size() < mapPoints.size() * 0.95)
 	{
 		return false;
 	}

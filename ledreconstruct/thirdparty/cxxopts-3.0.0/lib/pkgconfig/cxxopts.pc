@@ -1,0 +1,7 @@
+prefix=C:\Users\Evan\Downloads\cxxopts-3.0.0\cxxopts-3.0.0\build\install
+includedir=${prefix}/include
+
+Name: cxxopts
+Description: 
+Version: 3.0.0
+Cflags: -I${includedir}

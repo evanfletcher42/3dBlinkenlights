@@ -1,0 +1,10 @@
+prefix=C:\Users\Evan\Documents\repos\ceres\glog-0.5.0\build\install
+exec_prefix=C:\Users\Evan\Documents\repos\ceres\glog-0.5.0\build\install/bin
+libdir=C:\Users\Evan\Documents\repos\ceres\glog-0.5.0\build\install/lib
+includedir=C:\Users\Evan\Documents\repos\ceres\glog-0.5.0\build\install/include
+
+Name: libglog
+Description: Google Log (glog) C++ logging framework
+Version: 0.5.0
+Libs: -L${libdir} -lglog
+Cflags: -I${includedir}

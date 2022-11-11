@@ -105,7 +105,7 @@ private:
 	static constexpr int k_hadamardTable[8] = {
 		0b0000,
 		0b0101,
-		0b0010,
+		0b0011,
 		0b0110,
 		0b1111,
 		0b1010,

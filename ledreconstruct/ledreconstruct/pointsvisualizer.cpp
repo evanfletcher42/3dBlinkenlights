@@ -1,3 +1,4 @@
+#include <ceres/rotation.h>
 #include <opencv2/imgproc.hpp>
 
 #include "pointsvisualizer.h"
@@ -190,12 +191,27 @@ void CPointsVisualizer::DrawCameraPoses()
 {
 	for (const auto& kv : m_cameraFromWorldPoses)
 	{
-		const std::array<double, 6>& pose = kv.second;
+		const std::array<double, 6>& cameraFromWorld = kv.second;
+
+		// TBD: Invert pose
+		std::array<double, 6> worldFromCamera;
+		
+		for (int i = 0; i < 6; i++)
+		{
+			worldFromCamera[i] = -cameraFromWorld[i];
+		}
+
+
+		double tmp[3];
+		ceres::AngleAxisRotatePoint(&worldFromCamera[0], &worldFromCamera[3], tmp);
+		worldFromCamera[3] = tmp[0];
+		worldFromCamera[4] = tmp[1];
+		worldFromCamera[5] = tmp[2];
 
 		// Scale to bounding box
-		double flDrawX = (pose[3] - m_flBoundsMinX) / (m_flBoundsMaxX - m_flBoundsMinX);
-		double flDrawY = (pose[4] - m_flBoundsMinY) / (m_flBoundsMaxY - m_flBoundsMinY);
-		double flDrawZ = (pose[5] - m_flBoundsMinZ) / (m_flBoundsMaxZ - m_flBoundsMinZ);
+		double flDrawX = (worldFromCamera[3] - m_flBoundsMinX) / (m_flBoundsMaxX - m_flBoundsMinX);
+		double flDrawY = (worldFromCamera[4] - m_flBoundsMinY) / (m_flBoundsMaxY - m_flBoundsMinY);
+		double flDrawZ = (worldFromCamera[5] - m_flBoundsMinZ) / (m_flBoundsMaxZ - m_flBoundsMinZ);
 
 		// draw XY
 		cv::Point2d pXY(flDrawX * k_nViewWidth, flDrawY * k_nViewHeight);

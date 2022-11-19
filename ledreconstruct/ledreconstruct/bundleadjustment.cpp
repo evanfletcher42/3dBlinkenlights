@@ -152,8 +152,10 @@ bool BundleAdjuster::Reconstruct()
 		nIterations++;
 
 		printf("\nReconstruct: Initializing new viewpoints...\n");
+		m_visualizer.SetTitle("Initializing new viewpoints...");
 		int nCamerasAdded = InitializeNewCameras();
 
+		m_visualizer.SetTitle("Init new viewpoints");
 		m_visualizer.OnDataUpdate(m_cameraFromWorldPoses, (double*)m_ledPoints, m_pointsInitialized);
 
 		if (nCamerasAdded <= 0)
@@ -163,6 +165,7 @@ bool BundleAdjuster::Reconstruct()
 		}
 
 		printf("Solving poses for new viewpoints...\n");
+		m_visualizer.SetTitle("Solving new viewpoint poses...");
 		ceres::Problem problem1;
 		SetupBundleAdjustmentProblem(problem1, false, true, false);
 		SolveProblem(problem1);
@@ -170,6 +173,8 @@ bool BundleAdjuster::Reconstruct()
 		m_visualizer.OnDataUpdate(m_cameraFromWorldPoses, (double*)m_ledPoints, m_pointsInitialized);
 
 		printf("Solving poses + points for new viewpoints...\n");
+		m_visualizer.SetTitle("Solving points and poses (new viewpoints)...");
+
 		ceres::Problem problem2;
 		SetupBundleAdjustmentProblem(problem2, false, true, true);
 		SolveProblem(problem2);
@@ -177,6 +182,8 @@ bool BundleAdjuster::Reconstruct()
 		m_visualizer.OnDataUpdate(m_cameraFromWorldPoses, (double*)m_ledPoints, m_pointsInitialized);
 
 		printf("Triangulating new points...\n");
+		m_visualizer.SetTitle("Triangulating new points...\n");
+
 		int nPointsAdded = TriangulateNewPoints();
 		printf("Triangulated %d points\n", nPointsAdded);
 
@@ -191,6 +198,7 @@ bool BundleAdjuster::Reconstruct()
 			continue;
 
 		printf("Solving poses + points for new points...\n");
+		m_visualizer.SetTitle("Solving points and poses (new points)...");
 		ceres::Problem problem3;
 		SetupBundleAdjustmentProblem(problem3, false, true, true);
 		SolveProblem(problem3);
@@ -202,6 +210,7 @@ bool BundleAdjuster::Reconstruct()
 	// (Typically BA problems would do this sooner.  However, LED coverage can be somewhat sparse compared to natural features.) 
 
 	printf("\nReconstruct: Solving final BA...\n");
+	m_visualizer.SetTitle("Solving final BA...");
 
 	ceres::Problem problem;
 	SetupBundleAdjustmentProblem(problem, true, true, true);
@@ -214,11 +223,11 @@ bool BundleAdjuster::Reconstruct()
 	int nPointsRemoved = CullInvalidPoints();
 	printf("Reconstruct: Culled %d invalid points\n", nPointsRemoved);
 
-	// Paper over any gaps with linear interpolation.
+	// Paper over any gaps with linear interpolation.  
+	// Attempt one last round of bundle adjustment in case any of these LEDs are observed.  They won't move if not.  
 	InterpolateNewPoints();
-
 	ceres::Problem problem4;
-	SetupBundleAdjustmentProblem(problem4, false, true, true);
+	SetupBundleAdjustmentProblem(problem4, true, true, true);
 	SolveProblem(problem4);
 
 	printf("Reconstruct complete\n");

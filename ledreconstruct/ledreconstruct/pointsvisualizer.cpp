@@ -7,6 +7,8 @@ CPointsVisualizer::CPointsVisualizer()
 {
 	m_frame = cv::Mat::zeros(k_nImageRows, k_nImageCols, CV_8UC3);
 
+	m_titleText = "";
+
 	// Create ROIs for all three views
 	cv::Rect roiViewXY = cv::Rect(0, 0, k_nViewWidth, k_nViewHeight);
 	cv::Rect roiViewYZ = cv::Rect(k_nViewWidth, k_nViewHeight, k_nViewWidth, k_nViewHeight);
@@ -56,6 +58,11 @@ void CPointsVisualizer::OnDataUpdate(const std::unordered_map<int, std::array<do
 	lk.unlock();
 }
 
+void CPointsVisualizer::SetTitle(const std::string& title)
+{
+	m_titleText = title;
+}
+
 void CPointsVisualizer::UIThreadFunc()
 {
 	cv::namedWindow("Reconstruction", cv::WINDOW_NORMAL | cv::WINDOW_KEEPRATIO | cv::WINDOW_GUI_NORMAL);
@@ -81,6 +88,9 @@ void CPointsVisualizer::Draw()
 {
 	// Start with a blank slate
 	EraseImage();
+
+	// Title text
+	cv::putText(m_frame, m_titleText, cv::Point2d(10, 30), cv::FONT_HERSHEY_PLAIN, 1.0, cv::Scalar(255, 255, 255), 1, cv::LineTypes::LINE_AA);
 
 	// Update bounding box used in subsequent functions
 	UpdateBoundingBox();
@@ -157,6 +167,10 @@ void CPointsVisualizer::UpdateBoundingBox()
 void CPointsVisualizer::EraseImage()
 {
 	m_frame.setTo( cv::Scalar( 0, 0, 0) );
+
+	// Draw lines separating views
+	cv::line(m_frame, cv::Point2d(k_nViewWidth, 0), cv::Point2d(k_nViewWidth, k_nImageRows), cv::Scalar(255, 255, 255));
+	cv::line(m_frame, cv::Point2d(0, k_nViewHeight), cv::Point2d(k_nImageCols, k_nViewHeight), cv::Scalar(255, 255, 255));
 }
 
 void CPointsVisualizer::DrawTrackedPoints()

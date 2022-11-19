@@ -2,6 +2,7 @@
 
 #include <array>
 #include <mutex>
+#include <string>
 #include <thread>
 #include <unordered_map>
 #include <vector>
@@ -17,6 +18,9 @@ public:
 
 	// New data callback
 	void OnDataUpdate(const std::unordered_map< int, std::array<double, 6> >& cameraFromWorldPoses, const double* const ledPoints, const bool* const pointsInitialized);
+
+	// Set text at the top of the UI
+	void SetTitle(const std::string &title);
 
 	// UI thread
 	void UIThreadFunc();
@@ -46,6 +50,9 @@ private:
 
 	// Fractional space to draw around outside of bounding box
 	static constexpr double k_flBorderFrac = 0.05;
+
+	// Title text
+	std::string m_titleText;
 
 	// Image buffer for drawing
 	cv::Mat m_frame;

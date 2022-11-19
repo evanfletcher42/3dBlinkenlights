@@ -214,6 +214,9 @@ bool BundleAdjuster::Reconstruct()
 	int nPointsRemoved = CullInvalidPoints();
 	printf("Reconstruct: Culled %d invalid points\n", nPointsRemoved);
 
+	// Paper over any gaps with linear interpolation.
+	InterpolateNewPoints();
+
 	ceres::Problem problem4;
 	SetupBundleAdjustmentProblem(problem4, false, true, true);
 	SolveProblem(problem4);
@@ -709,6 +712,64 @@ int BundleAdjuster::TriangulateNewPoints()
 	}
 
 	return nPointsTriangulated;
+}
+
+int BundleAdjuster::InterpolateNewPoints()
+{
+	// Initialize points via linear interpolation across gaps.  
+	// These LED strands are sequentially numbered with uniform spacing.
+
+	int nLastInitializedLedIdx = 0;
+	int nNewPoints = 0;
+
+	// Find first LED
+	for (int i = 0; i < k_nMaxLeds; i++)
+	{
+		if (m_pointsInitialized[i])
+		{
+			nLastInitializedLedIdx = i;
+			break;
+		}
+	}
+
+	// Find gaps
+	bool bGap = false;
+	for (int i = nLastInitializedLedIdx; i < k_nMaxLeds; i++)
+	{
+		if (bGap)
+		{
+			if (m_pointsInitialized[i])
+			{
+				int nDt = i - nLastInitializedLedIdx;
+				double flDx = (m_ledPoints[i][0] - m_ledPoints[nLastInitializedLedIdx][0]) / nDt;
+				double flDy = (m_ledPoints[i][1] - m_ledPoints[nLastInitializedLedIdx][1]) / nDt;
+				double flDz = (m_ledPoints[i][2] - m_ledPoints[nLastInitializedLedIdx][2]) / nDt;
+
+				for (int j = 1; j < i - nLastInitializedLedIdx; j++)
+				{
+					int k = nLastInitializedLedIdx + j;
+					m_ledPoints[k][0] = m_ledPoints[nLastInitializedLedIdx][0] + flDx * j;
+					m_ledPoints[k][1] = m_ledPoints[nLastInitializedLedIdx][1] + flDy * j;
+					m_ledPoints[k][2] = m_ledPoints[nLastInitializedLedIdx][2] + flDz * j;
+					m_pointsInitialized[k] = true;
+
+					printf("Linear interp init LED %d\n", k);
+
+					nNewPoints++;
+				}
+			}
+		}
+
+		bGap = !m_pointsInitialized[i];
+
+		if (m_pointsInitialized[i])
+		{
+			nLastInitializedLedIdx = i;
+		}
+	}
+
+	printf("InterpolateNewPoints: Added %d new LEDs\n", nNewPoints);
+	return nNewPoints;
 }
 
 bool BundleAdjuster::TestLedInFrontOfAllObservingCameras(int nLedIdx)

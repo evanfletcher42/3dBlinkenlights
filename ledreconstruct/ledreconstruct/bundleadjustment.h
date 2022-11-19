@@ -48,6 +48,10 @@ public:
 	// Attempt to initialize new points that are visible in 2+ frames in the current map.
 	int TriangulateNewPoints();
 
+	// Initialize points by linearally interpolating their positions between other points.  
+	// Works okay for LED strings.  
+	int InterpolateNewPoints();
+
 	// Test whether an LED is in front of all cameras that observe it.
 	// Useful for resetting bad points or poor triangulations.
 	bool TestLedInFrontOfAllObservingCameras( int nLedIdx );

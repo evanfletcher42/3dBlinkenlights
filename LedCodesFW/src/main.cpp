@@ -50,7 +50,7 @@ void animateLeds()
 
       FastLED.show();
     }
-    delay(66*3);
+    delay(66);
   }
 }
 

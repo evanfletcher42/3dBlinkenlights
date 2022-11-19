@@ -82,6 +82,8 @@ public:
 	// Set of observed LEDs in each frame.  Index like: m_observations[ nFrameIdx ][ nObservationIdxInThisFrame ]
 	std::vector< std::vector< PointObservation_t > > m_observations;
 
+	static constexpr int k_nMaxLeds = 500;
+
 private:
 
 	// Frame IDs of centers of detected sync pulses.
@@ -94,8 +96,6 @@ private:
 
 	static constexpr int k_nMovingAverageSize = 10;
 	static constexpr int k_nMaximaSeparation = 40;
-
-	static constexpr int k_nMaxLedIdx = 500;
 
 	// Intensity delta between two frames required to interpret a bit as a one or a zero.
 	// Prevents labeling of bright objects that aren't blinking LEDs (e.g. background lighting).

@@ -176,9 +176,11 @@ bool BundleAdjuster::Reconstruct()
 
 		m_visualizer.OnDataUpdate(m_cameraFromWorldPoses, (double*)m_ledPoints, m_pointsInitialized);
 
+		printf("Triangulating new points...\n");
 		int nPointsAdded = TriangulateNewPoints();
 		printf("Triangulated %d points\n", nPointsAdded);
 
+		printf("Culling invalid points...\n");
 		int nPointsRemoved = CullInvalidPoints();
 		printf("Culled %d invalid points\n", nPointsRemoved);
 
@@ -605,7 +607,7 @@ int BundleAdjuster::TriangulateNewPoints()
 	// TBD: This initializes new points using 2 frames.  New points are probably visible in more than 2 frames. 
 	//		Using all of them (i.e. DLT over all viewpoints) would probably yield a better initialization.
 	//		That said, it may not be worth the expense - the BA solve right after triangulation does much the same
-	//		thing as a more-optimal 
+	//		thing as a more-optimal initialization would.
 	
 	// All tracked frames where a given untracked LED is observed.
 	// Addressing: ledTrackedFrames[nLedIdx] -> vector of frames where LED is tracked
@@ -1132,13 +1134,8 @@ void BundleAdjuster::composeRT(double* pose, cv::Mat& poseRT)
 	cv::Mat rvec(3, 1, CV_64F, pose);
 	cv::Mat tvec(3, 1, CV_64F, pose + 3);
 
-	//std::cout << "rvec: \n" << rvec << std::endl;
-	//std::cout << "tvec: \n" << tvec << std::endl;
-
 	cv::Mat R;
 	cv::Rodrigues(rvec, R);
-
-	//std::cout << "R:\n" << R << std::endl;
 
 	poseRT = cv::Mat::zeros(3, 4, CV_64F);
 
@@ -1150,8 +1147,6 @@ void BundleAdjuster::composeRT(double* pose, cv::Mat& poseRT)
 
 	R.copyTo(poseR);
 	tvec.copyTo(poseT);
-
-	//std::cout << "poseRT: \n" << poseRT << std::endl << std::endl;
 
 	poseRT.convertTo(poseRT, CV_32F);
 }

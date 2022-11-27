@@ -6,20 +6,6 @@
 
 CRGBArray<NUM_LEDS> leds;
 
-// DEFINE_GRADIENT_PALETTE( snow_gp ) {
-//   0,     0,  0,  0,   //black
-//  64,     0,  0,  0,   //black
-// 192,   255,255,255,   //white
-// 255,   255,255,255 }; //white
-
-// DEFINE_GRADIENT_PALETTE( snow_gp ) {
-//    0,    0,   0,   0,
-//   64,    0,   0,   0,
-//  128,   80, 128, 176,
-//  192,  255, 255, 255,
-//  255,  255, 255, 255,
-// };
-
 DEFINE_GRADIENT_PALETTE( snow_gp ) {
    0,    0,   0,   0,
   64,    0,   0,   0,
@@ -45,32 +31,60 @@ void setup()
 // Updates a snowfall-like effect where clouds of Perlin noise fall downwards at random angles.
 void drawSnowfall()
 {
-  static constexpr uint32_t k_windChangeMilliseconds = 5000;
+  static constexpr uint32_t k_windChangeMilliseconds = 30000;
+  static constexpr uint32_t k_windTransitionMilliseconds = 5000;
+
   static constexpr uint16_t k_velRandomMax = 80;
   static constexpr int k_zVel = -80;
 
   static int offset[3] = {0};
+
+  static int prevVelocity[3] = {0};
   static int velocity[3] = {0};
+  static int nextVelocity[3] = {0};
 
   static uint32_t lastTs = millis();
-
   static uint32_t lastWindChangeTs = 0;
+  static bool bInitialize = true;
 
   uint32_t ts = millis();
+
+  // Initialize velocities on startup
+  if(bInitialize)
+  {
+    nextVelocity[0] = 0;
+    nextVelocity[1] = 0;
+    nextVelocity[2] = k_zVel;
+
+    memcpy(prevVelocity, nextVelocity, sizeof(prevVelocity));
+
+    bInitialize = false;
+  }
 
   // Update wind velocity
   if( ts - lastWindChangeTs > k_windChangeMilliseconds )
   {
     lastWindChangeTs = ts;
 
+    // Shift current target velocity to prev velocity
+    memcpy(prevVelocity, nextVelocity, sizeof(prevVelocity));
+
     // Roll a random wind velocity.
     uint16_t rx = random16(0, 2*k_velRandomMax);
     uint16_t ry = random16(0, 2*k_velRandomMax);
 
-    velocity[0] = (int)(rx - k_velRandomMax);
-    velocity[1] = (int)(ry - k_velRandomMax);
-    velocity[2] = k_zVel;
+    nextVelocity[0] = (int)(rx - k_velRandomMax);
+    nextVelocity[1] = (int)(ry - k_velRandomMax);
+    nextVelocity[2] = k_zVel;
   }
+
+  // Compute current velocity
+  float flVelTransition = ((float)(ts - lastWindChangeTs))/k_windTransitionMilliseconds;
+  flVelTransition = fminf(1.0f, flVelTransition);
+
+  velocity[0] = (1.0f - flVelTransition) * prevVelocity[0] + flVelTransition * nextVelocity[0];
+  velocity[1] = (1.0f - flVelTransition) * prevVelocity[1] + flVelTransition * nextVelocity[1];
+  velocity[2] = (1.0f - flVelTransition) * prevVelocity[2] + flVelTransition * nextVelocity[2];
 
   // Update position
   uint32_t dt = ts - lastTs;
@@ -105,34 +119,34 @@ void drawSnowfall()
   lastTs = ts;
 }
 
-void drawPerlinClouds()
-{
-  uint32_t tOfs = millis();
-  uint32_t zOfs = tOfs * 80;  // TBD: Speed scaling
+// void drawPerlinClouds()
+// {
+//   uint32_t tOfs = millis();
+//   uint32_t zOfs = tOfs * 80;  // TBD: Speed scaling
 
-  uint32_t ledPointBuf16p16[3] = {0};
-  for(int i = 0; i < NUM_LEDS; i++)
-  {
-    const uint32_t* const pLed16p16 = LEDPoints::getLED16p16(i);
+//   uint32_t ledPointBuf16p16[3] = {0};
+//   for(int i = 0; i < NUM_LEDS; i++)
+//   {
+//     const uint32_t* const pLed16p16 = LEDPoints::getLED16p16(i);
 
-    if(pLed16p16[0] == 0)
-    {
-      // untracked LED - turn off
-      leds[i] = CRGB(0, 0, 0);
-      continue;
-    }
+//     if(pLed16p16[0] == 0)
+//     {
+//       // untracked LED - turn off
+//       leds[i] = CRGB(0, 0, 0);
+//       continue;
+//     }
 
-    ledPointBuf16p16[0] = pLed16p16[0];
-    ledPointBuf16p16[1] = pLed16p16[1];
-    ledPointBuf16p16[2] = pLed16p16[2] + zOfs;
+//     ledPointBuf16p16[0] = pLed16p16[0];
+//     ledPointBuf16p16[1] = pLed16p16[1];
+//     ledPointBuf16p16[2] = pLed16p16[2] + zOfs;
 
-    int16_t perlinSample = inoise16(ledPointBuf16p16[0], ledPointBuf16p16[1], ledPointBuf16p16[2]);
-    int8_t perlinSample8 = (uint8_t)(perlinSample >> 8);
+//     int16_t perlinSample = inoise16(ledPointBuf16p16[0], ledPointBuf16p16[1], ledPointBuf16p16[2]);
+//     int8_t perlinSample8 = (uint8_t)(perlinSample >> 8);
 
-    leds[i] = ColorFromPalette(OceanColors_p, perlinSample8);
-    //leds[i] = ColorFromPalette(Snow_p, perlinSample8);
-  }
-}
+//     leds[i] = ColorFromPalette(OceanColors_p, perlinSample8);
+//     //leds[i] = ColorFromPalette(Snow_p, perlinSample8);
+//   }
+// }
 
 // void drawPlanes()
 // {
@@ -167,7 +181,7 @@ void drawPerlinClouds()
 
 void loop()
 {
-  drawPerlinClouds();
+  //drawPerlinClouds();
   //drawPlanes();
   drawSnowfall();
 

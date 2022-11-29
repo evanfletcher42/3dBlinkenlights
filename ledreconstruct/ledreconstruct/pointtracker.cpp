@@ -338,6 +338,7 @@ bool PointTracker::DecodeLEDs()
             if (nLedIdx > k_nMaxLeds)
             {
                 printf("Decode failure: %d > %d\n", nLedIdx, k_nMaxLeds);
+                continue;
             }
             
             // Assign LED index in this observation's decoded range

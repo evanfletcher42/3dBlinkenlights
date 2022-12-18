@@ -9,13 +9,13 @@ CRGBArray<NUM_LEDS> leds;
 DEFINE_GRADIENT_PALETTE( snow_gp ) {
    0,    0,   0,   0,
   64,    0,   0,   0,
- 128,   80, 128, 176,
- 192,  255, 255, 255,
+ 128,   40, 64, 176,
+ 192,  255, 255, 128,
  255,  255, 255, 255,
 };
-
-
 CRGBPalette256 snowPalette = snow_gp;
+
+uint32_t tStart = 0;
 
 void setup()
 {
@@ -26,6 +26,13 @@ void setup()
   FastLED.setMaxPowerInVoltsAndMilliamps( VOLTS, MAX_MA);
   FastLED.addLeds<LED_TYPE,DATA_PIN,COLOR_ORDER>(leds, NUM_LEDS)
     .setCorrection(0xFFB08C);
+
+  tStart = millis();
+
+  for(int i = 0; i < NUM_LEDS; i++)
+  {
+    leds[i] = CRGB(0, 0, 0);
+  }
 }
 
 // Updates a snowfall-like effect where clouds of Perlin noise fall downwards at random angles.
@@ -34,8 +41,8 @@ void drawSnowfall()
   static constexpr uint32_t k_windChangeMilliseconds = 30000;
   static constexpr uint32_t k_windTransitionMilliseconds = 5000;
 
-  static constexpr uint16_t k_velRandomMax = 80;
-  static constexpr int k_zVel = -80;
+  static constexpr uint16_t k_velRandomMax = 60;
+  static constexpr int k_zVel = -130;
 
   static int offset[3] = {0};
 
@@ -119,71 +126,57 @@ void drawSnowfall()
   lastTs = ts;
 }
 
-// void drawPerlinClouds()
-// {
-//   uint32_t tOfs = millis();
-//   uint32_t zOfs = tOfs * 80;  // TBD: Speed scaling
+void drawPlanes()
+{
+  constexpr uint32_t tSweep = 3000;
+  constexpr uint32_t tCycle = tSweep * 3;
 
-//   uint32_t ledPointBuf16p16[3] = {0};
-//   for(int i = 0; i < NUM_LEDS; i++)
-//   {
-//     const uint32_t* const pLed16p16 = LEDPoints::getLED16p16(i);
+  constexpr float flSweepWidth = 0.05f;
+  constexpr float flSweepDarkWidth = flSweepWidth * 3;
 
-//     if(pLed16p16[0] == 0)
-//     {
-//       // untracked LED - turn off
-//       leds[i] = CRGB(0, 0, 0);
-//       continue;
-//     }
+  uint32_t ts = millis();
 
-//     ledPointBuf16p16[0] = pLed16p16[0];
-//     ledPointBuf16p16[1] = pLed16p16[1];
-//     ledPointBuf16p16[2] = pLed16p16[2] + zOfs;
+  uint32_t nAxisSweep = (ts % tCycle) / tSweep;
+  uint32_t eraseDir = (ts / tSweep) % 2;
 
-//     int16_t perlinSample = inoise16(ledPointBuf16p16[0], ledPointBuf16p16[1], ledPointBuf16p16[2]);
-//     int8_t perlinSample8 = (uint8_t)(perlinSample >> 8);
+  float flSweepPos = (float)(ts % tSweep) / tSweep;
+  float flSweepOfs = -0.5f + 1.0f * flSweepPos;
 
-//     leds[i] = ColorFromPalette(OceanColors_p, perlinSample8);
-//     //leds[i] = ColorFromPalette(Snow_p, perlinSample8);
-//   }
-// }
+  flSweepOfs = flSweepOfs * 1.5;
 
-// void drawPlanes()
-// {
-//   constexpr uint32_t tSweep = 1000;
-//   constexpr uint32_t tCycle = tSweep * 3;
+  for(int i = 0; i < NUM_LEDS; i++)
+  {
+    const float* const pLedF = LEDPoints::getLEDFloat(i);
 
-//   constexpr float flSweepWidth = 0.05f;
+    if(pLedF[0] == NAN)
+    {
+      continue;
+    }
 
-//   uint32_t ts = millis();
+    float flOfs = pLedF[nAxisSweep] - flSweepOfs;
+    float flOfsAbs = fabsf(flOfs);
 
-//   uint32_t nAxisSweep = (ts % tCycle) / tSweep;
-//   float flSweepPos = (float)(ts % tSweep) / tSweep;
-//   float flSweepOfs = -0.5f + 1.0f * flSweepPos;
+    // Erase ahead or behind
+    if(eraseDir == 0 && flOfs < 0 || eraseDir == 1 && flOfs > 0)
+      leds[i] = CRGB(leds[i].b, leds[i].g, leds[i].r);
 
-//   for(int i = 0; i < NUM_LEDS; i++)
-//   {
-//     leds[i] = CRGB(0, 0, 0);
+    if( flOfsAbs < flSweepDarkWidth )
+    {
+      leds[i] = CRGB(0, 0, 0);
 
-//     const float* const pLedF = LEDPoints::getLEDFloat(i);
-
-//     if(pLedF[0] == NAN)
-//     {
-//       continue;
-//     }
-
-//     if( fabsf(pLedF[nAxisSweep] - flSweepOfs) < flSweepWidth)
-//     {
-//       leds[i] = CRGB(255, 255, 255);
-//     }
-//   }
-// }
+      if(flOfsAbs < flSweepWidth)
+        leds[i] = CRGB(192, 192, 192);
+    }
+  }
+}
 
 void loop()
 {
-  //drawPerlinClouds();
-  //drawPlanes();
   drawSnowfall();
 
+  // Sweep planes "erasing" and "showing" the snowfall every so often.
+  drawPlanes();
+
+  FastLED.setBrightness(205);
   FastLED.show();
 }

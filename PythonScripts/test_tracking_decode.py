@@ -221,7 +221,7 @@ def main():
 
             for j in range(3):
                 word = decode_word(slot_rgb[1:9, j])
-                ax[j].text(sync_start + 1, np.max(observed_rgb[led_idx][:, j]), str(word))
+                ax[j].text(sync_start + 1, np.max(observed_rgb[led_idx][:, j]*0.85), str(word))
 
             slot_w = float(sync_w) / 10
 
@@ -232,8 +232,11 @@ def main():
 
                 for k in range(4):
                     ax[k].axvline(slot_mid, color='gray', linewidth='1')
+                    
+                    if j % 2 == 1:
+                        ax[k].axvspan(slot_mid, int(slot_mid + slot_w + 0.5), color='yellow', alpha=0.25)    
 
-        plt.suptitle("LED %d RGB vs Time" % led_idx)
+        plt.suptitle("LED %d RGB Intensity over Time" % led_idx)
 
         # plt.figure()
         # observed_points[led_idx] = np.array(observed_points[led_idx])

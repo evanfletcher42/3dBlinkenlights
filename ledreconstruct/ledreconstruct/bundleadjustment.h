@@ -37,6 +37,10 @@ public:
 	// Estimate the relative poses of two frames via Nister's five-point method + a RANSAC / cheirality check. 
 	// Also initializes locations of LEDs seen by this pair.  
 	bool TwoFrameEssentialMatInit(int nFrame1, int nFrame2, cv::Mat &cameraMat);
+
+	// Do a DSO-style initialization, where points are unprojected from frame 1, and the initial frame 1 -> frame 2 
+	// transform guess is identity. An immediate bundle adjustment over these 2 frames makes init proper. 
+	bool TwoFramePlanarInit(int nFrame1, int nFrame2);
 	
 	// Initialize the specified camera's cameraFromWorld transform via a PnP solve on the current map.
 	bool InitCameraPosePnP(int nFrameIdx);

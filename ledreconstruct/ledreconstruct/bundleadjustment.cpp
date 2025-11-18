@@ -85,25 +85,28 @@ bool BundleAdjuster::InitializeBA()
 	// Find a pair of frames where the transformation cannot be explained by a homography.
 	// This enforces parallax between the two frames, making triangulation possible.
 
+	// Start by finding the frame with the most observations
 	int nFrame1 = 0;
+	int nMaxObs = 0;
 
-	// Scan ahead until we find a frame with labelled LEDs.
-	while (true)
+	for (int i = 0; i < m_pObservations->size(); i++)
 	{
 		int nLabeledLeds = 0;
 
-		for (const PointObservation& obs : (*m_pObservations)[nFrame1])
+		for (const PointObservation& obs : (*m_pObservations)[i])
 		{
 			if (obs.status == PointObservation::ObservationStatus::eLabeled)
 				nLabeledLeds++;
 		}
 
-		if (nLabeledLeds > 0)
-			break;
-
-		nFrame1++;
+		if (nLabeledLeds > nMaxObs)
+		{
+			nMaxObs = nLabeledLeds;
+			nFrame1 = i;
+		}
 	}
-	printf("Scanned ahead to frame %d\n", nFrame1);
+
+	printf("Init with frame %d (%d LEDs)\n", nFrame1, nMaxObs);
 
 	printf("Looking for perspective differences...\n");
 	int nFrame2;
@@ -119,8 +122,11 @@ bool BundleAdjuster::InitializeBA()
 	}
 	
 	// Given that we have parallax, initialize camera poses and triangulate points via an essential-matrix decomposition.
-	cv::Mat cameraMat = cv::Mat::eye(cv::Size(3, 3), CV_32FC1);
-	TwoFrameEssentialMatInit(nFrame1, nFrame2, cameraMat);
+	//cv::Mat cameraMat = cv::Mat::eye(cv::Size(3, 3), CV_32FC1);
+	//TwoFrameEssentialMatInit(nFrame1, nFrame2, cameraMat);
+
+	// Do a DSO-style two frame init (where frame 1 points are unprojected to Z=1)
+	TwoFramePlanarInit(nFrame1, nFrame2);
 
 	// Refine with a two-frame bundle adjustment.  
 	ceres::Problem problem;
@@ -223,8 +229,12 @@ bool BundleAdjuster::Reconstruct()
 	int nPointsRemoved = CullInvalidPoints();
 	printf("Reconstruct: Culled %d invalid points\n", nPointsRemoved);
 
+	m_visualizer.OnDataUpdate(m_cameraFromWorldPoses, (double*)m_ledPoints, m_pointsInitialized);
+
 	// Paper over any gaps with linear interpolation.  
 	// Attempt one last round of bundle adjustment in case any of these LEDs are observed.  They won't move if not.  
+
+	m_visualizer.SetTitle("Interpolate missing points & solve...");
 	InterpolateNewPoints();
 	ceres::Problem problem4;
 	SetupBundleAdjustmentProblem(problem4, true, true, true);
@@ -335,7 +345,7 @@ bool BundleAdjuster::TwoFrameHomography(int nFrame1, int nFrame2, cv::Mat &homog
 	}
 	printf("\n");
 
-	const double k_flInlierThreshold = 0.50;
+	const double k_flInlierThreshold = 0.75;
 	double flInlierRatio = ((double)(nInliers)) / frame1Pts.size();
 
 	if (flInlierRatio < k_flInlierThreshold)
@@ -499,6 +509,58 @@ bool BundleAdjuster::TwoFrameEssentialMatInit(int nFrame1, int nFrame2, cv::Mat 
 		m_ledPoints[frame1Obs[i]->nLedIdx][2] /= flMaxScale;
 
 		printf("LED %d: %f %f %f\n", frame1Obs[i]->nLedIdx, m_ledPoints[frame1Obs[i]->nLedIdx][0], m_ledPoints[frame1Obs[i]->nLedIdx][1], m_ledPoints[frame1Obs[i]->nLedIdx][2]);
+	}
+
+	return true;
+}
+
+bool BundleAdjuster::TwoFramePlanarInit(int nFrame1, int nFrame2)
+{
+	std::vector< cv::Point2f > frame1Pts;
+	std::vector< cv::Point2f > frame2Pts;
+
+	std::vector< const PointObservation_t* > frame1Obs;
+	std::vector< const PointObservation_t* > frame2Obs;
+
+	if (!FindFrameCorrespondences(nFrame1, nFrame2, frame1Obs, frame1Pts, frame2Obs, frame2Pts))
+		return false;
+
+	// Unproject frame 1's points to 1 meter in front of the camera.
+	std::vector< cv::Point2f > frame1PtsXY;
+	cv::undistortPoints(frame1Pts, frame1PtsXY, m_cameraMat, m_distCoefs);
+
+	// ============== Initialize parts of the problem as best we can ================
+
+	// Initialize both camera poses as identity
+	m_cameraFromWorldPoses[nFrame1][0] = 0.0;
+	m_cameraFromWorldPoses[nFrame1][1] = 0.0;
+	m_cameraFromWorldPoses[nFrame1][2] = 0.0;
+	m_cameraFromWorldPoses[nFrame1][3] = 0.0;
+	m_cameraFromWorldPoses[nFrame1][4] = 0.0;
+	m_cameraFromWorldPoses[nFrame1][5] = 0.0;
+
+	m_cameraFromWorldPoses[nFrame2][0] = 0.0;
+	m_cameraFromWorldPoses[nFrame2][1] = 0.0;
+	m_cameraFromWorldPoses[nFrame2][2] = 0.0;
+	m_cameraFromWorldPoses[nFrame2][3] = 0.0;
+	m_cameraFromWorldPoses[nFrame2][4] = 0.0;
+	m_cameraFromWorldPoses[nFrame2][5] = 0.0;
+
+	// Mark frame 1 as the origin frame
+	m_nOriginFrameId = nFrame1;
+
+	// Set point locations for all points
+	for (int i = 0; i < frame1Obs.size(); i++)
+	{
+		int nLedIdx = frame1Obs[i]->nLedIdx;
+
+		m_ledPoints[nLedIdx][0] = frame1PtsXY[i].x;
+		m_ledPoints[nLedIdx][1] = frame1PtsXY[i].y;
+		m_ledPoints[nLedIdx][2] = 1.0;
+
+		printf("LED %d: %f %f %f\n", frame1Obs[i]->nLedIdx, m_ledPoints[frame1Obs[i]->nLedIdx][0], m_ledPoints[frame1Obs[i]->nLedIdx][1], m_ledPoints[frame1Obs[i]->nLedIdx][2]);
+
+		m_pointsInitialized[nLedIdx] = true;
 	}
 
 	return true;
@@ -1190,7 +1252,7 @@ bool BundleAdjuster::DrawReconstructionOnVideo(std::string videoPath)
 
 		cv::imshow("Video", img);
 
-		if (cv::waitKey(30) >= 0)
+		if (cv::waitKey(16) >= 0)
 			break;
 
 		nFrameIdx++;

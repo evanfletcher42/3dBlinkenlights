@@ -80,7 +80,7 @@ void CPointsVisualizer::UIThreadFunc()
 		}
 
 		// Perform UI maintenance
-		cv::waitKey(33);
+		cv::waitKey(16);
 	}
 }
 

@@ -142,6 +142,7 @@ bool PointTracker::DetectSyncPulses()
 
     printf("Intensities size: %zu\n", intensities.size());
 
+
     // 1D moving average
     cv::Mat1d intensitiesMat(1, intensities.size(), intensities.data());
     cv::Mat1d maIntensities;
@@ -298,6 +299,9 @@ bool PointTracker::DecodeLEDs()
     if (m_syncCenters.size() < 2)
         return false;
 
+    double probZero[32];
+    double probOne[32];
+
     for (int i = 0; i < m_syncCenters.size() - 1; i++)
     {
         int nSyncStart = m_syncCenters[i];
@@ -306,17 +310,26 @@ bool PointTracker::DecodeLEDs()
         // Try to decode LEDs for every observation starting at nSyncStart
         for (PointObservation_t& obs : m_observations[nSyncStart])
         {
-            // Extract codewords
-            int nCodeR, nCodeG, nCodeB;
-            if (!ColorSequenceToCodes(obs, nSyncStart, nSyncEnd, nCodeR, nCodeG, nCodeB))
+            //printf("Decoding sequence\n");
+
+            if (!ColorSequenceToCodes(obs, nSyncStart, nSyncEnd, probZero, probOne))
                 continue;
 
-            // Decode
-            int nDecodedR, nDecodedG, nDecodedB;
+            // Decode in four parts (each 8-bit section to a 4-bit part of the LED code)
+            int nLedIdx = 0;
             bool bDecodeSuccess = true;
-            bDecodeSuccess &= HadamardDecode(nCodeR, nDecodedR);
-            bDecodeSuccess &= HadamardDecode(nCodeG, nDecodedG);
-            bDecodeSuccess &= HadamardDecode(nCodeB, nDecodedB);
+            for (int j = 0; j < 4 && bDecodeSuccess; j++)
+            {
+                //printf("\tNibble idx %d\n", j);
+
+                nLedIdx = nLedIdx << 4;
+                int nDecodedNibble = 0;
+
+                // Offset to matching block
+                bDecodeSuccess &= HadamardDecode(probZero + j * 8, probOne + j * 8, nDecodedNibble);
+
+                nLedIdx |= nDecodedNibble;
+            }
 
             if (!bDecodeSuccess)
             {
@@ -331,15 +344,24 @@ bool PointTracker::DecodeLEDs()
                 continue;
             }
 
-            // LED index is encoded in 3 parts across R,G,B
-            int nLedIdx = (nDecodedB << 6) + (nDecodedG << 3) + (nDecodedR);
+            //printf("Decoded as: %d\n", nLedIdx);
 
             // Sanity check: Don't decode LEDs that are off the end of the string
             if (nLedIdx > k_nMaxLeds)
             {
                 printf("Decode failure: %d > %d\n", nLedIdx, k_nMaxLeds);
+
+                // Mark sequence as ambiguous
+                PointObservation_t* pObs = &obs;
+                while (pObs != NULL && pObs->nFrameIdx < nSyncEnd)
+                {
+                    pObs->status = PointObservation::ObservationStatus::eAmbiguousCode;
+                    pObs = pObs->pNextFrameObs;
+                }
+
                 continue;
             }
+
             
             // Assign LED index in this observation's decoded range
             PointObservation_t* pObs = &obs;
@@ -355,7 +377,7 @@ bool PointTracker::DecodeLEDs()
     return true;
 }
 
-bool PointTracker::ColorSequenceToCodes(const PointObservation_t& obs, int nSyncStartFrame, int nSyncEndFrame, int& nCodeR, int& nCodeG, int& nCodeB)
+bool PointTracker::ColorSequenceToCodes(const PointObservation_t& obs, int nSyncStartFrame, int nSyncEndFrame, double* pProbZero, double* pProbOne)
 {
     // Input observation must be at the sync start frame
     if (obs.nFrameIdx != nSyncStartFrame)
@@ -364,118 +386,171 @@ bool PointTracker::ColorSequenceToCodes(const PointObservation_t& obs, int nSync
         return false;
     }
 
-    double flSlotWidth = (double)(nSyncEndFrame - nSyncStartFrame) / 10;
+    // LEDs blink in a looping 35 color sequence: 
+    // W | [33 RGB ] | W * W [
+    // nSyncStartFrame and nSyncEndFrame are on the edge between the two white blinks.
+    // 
+    // The first and last blinks (white) are the sync pulse and can be ignored.
+    // The remaining 33 slots are colors, where the led is set to R, G, or B.
+    // 
+    // Bits are encoded as color transitions along the RGB cycle, where:
+    //  - A positive cycle edge (RGB) is a 1
+    //  - A negative cycle edge (BGR) is a 0 
 
-    // Between two sync centers, there are 10 "slots" where LEDs are at a particular intensity.
-    // The first and last slots are the sync pulse.  These can be ignored.
-    // The remaining 8 slots encode four bits, where a low->high transition is a 0 and a high->low transition is a 1.
+    constexpr int k_nSlots = 35;
+    constexpr int k_nColors = k_nSlots - 2;
 
-    nCodeR = 0;
-    nCodeG = 0;
-    nCodeB = 0;
+    double flSlotWidth = (double)(nSyncEndFrame - nSyncStartFrame) / k_nSlots;
 
-    const PointObservation_t* pObs = &obs;
-
-    for (int i = 0; i < 4; i++)
+    // First extract slot colors as likelihoods (SVM-like)
+    typedef struct ColorProb_t
     {
-        // Find frame ID closest to middle of slot.
-        int nSlotIdxA = (int)(flSlotWidth * (2.0 * (double)i + 1.0 + 0.0) + flSlotWidth / 2 + nSyncStartFrame + 0.5);
-        int nSlotIdxB = (int)(flSlotWidth * (2.0 * (double)i + 1.0 + 1.0) + flSlotWidth / 2 + nSyncStartFrame + 0.5);
+        double pRed;
+        double pGrn;
+        double pBlu;
+    } ColorProb_t;
 
-        double rA, rB;
-        double gA, gB;
-        double bA, bB;
+    ColorProb_t colors[k_nColors];
 
-        // Advance to slot A
-        while (pObs->nFrameIdx < nSlotIdxA)
+    //printf("\tColors: flSlotWidth %f\n", flSlotWidth);
+
+    const PointObservation_t *pObs = &obs;
+
+    //printf("\t\tR: %-5.01f G:%-5.01f B:%-5.01f\n", pObs->r, pObs->g, pObs->b);
+
+    for (int i = 0; i < k_nColors; i++)
+    {
+        // Find frame ID closest to middle of color slot
+        float flSlotCenter = nSyncStartFrame + flSlotWidth * (0.5 + i + 1);
+        int nSlotFrame = (int)(flSlotCenter + 0.5);
+
+        // Advance to frame
+        while (pObs->nFrameIdx < nSlotFrame)
         {
             pObs = pObs->pNextFrameObs;
             if (pObs == NULL)
             {
-                //printf("Detection failure: Track ends before next sync\n");
+                //printf("\t\tDetection failure: Track ends before next sync\n");
                 return false;
             }
-        }
-        
-        rA = pObs->r;
-        gA = pObs->g;
-        bA = pObs->b;
 
-        // Advance to slot B
-        while (pObs->nFrameIdx < nSlotIdxB)
-        {
-            pObs = pObs->pNextFrameObs;
-            if (pObs == NULL)
-            {
-                //printf("Detection failure: Track ends before next sync\n");
-                return false;
-            }
+            //printf("\t\tR: %-5.01f G:%-5.01f B:%-5.01f\n", pObs->r, pObs->g, pObs->b);
         }
 
-        rB = pObs->r;
-        gB = pObs->g;
-        bB = pObs->b;
+        // SVM-like color classifier
+        double r = pObs->r;
+        double g = pObs->g;
+        double b = pObs->b;
 
-        // Confirm minimum distance threshold met
-        if (abs(rA - rB) < k_flMinBitDist ||
-            abs(gA - gB) < k_flMinBitDist ||
-            abs(bA - bB) < k_flMinBitDist)
-            return false;
+        double flScoreR = 1.0 * r - 0.5 * g - 0.5 * b;
+        double flScoreG = -0.5 * r + 1.0 * g - 0.5 * b;
+        double flScoreB = -0.5 * r - 0.5 * g + 1.0 * b;
+        double flMaxScore = MAX(flScoreR, MAX(flScoreG, flScoreB));
 
-        int one = (1 << (3 - i));
-        // Decode r/g/b channel bit
-        nCodeR |= (rA > rB ? one : 0);
-        nCodeG |= (gA > gB ? one : 0);
-        nCodeB |= (bA > bB ? one : 0);
+        // softmax
+        double expR = std::exp(flScoreR - flMaxScore);
+        double expG = std::exp(flScoreG - flMaxScore);
+        double expB = std::exp(flScoreB - flMaxScore);
+        double sumExp = expR + expG + expB;
+
+        colors[i].pRed = expR / sumExp;
+        colors[i].pGrn = expG / sumExp;
+        colors[i].pBlu = expB / sumExp;
+
+		//printf("\n\t\tpR: %0.02f pG: %0.02f pB: %0.02f\n\n", colors[i].pRed, colors[i].pGrn, colors[i].pBlu);
+    }
+
+    //while (pObs != NULL)
+    //{
+    //    pObs = pObs->pNextFrameObs;
+
+    //    if(pObs != NULL)
+    //        printf("\t\tR: %-5.01f G:%-5.01f B:%-5.01f\n", pObs->r, pObs->g, pObs->b);
+    //}
+
+    //printf("\tEdgeLikelihood:\n");
+
+    // Decode into likelihoods for code zeros or ones
+    // (Viterbi-like probabilistic decoder)
+    for (int i = 0; i < k_nColors - 1; i++)
+    {
+        pProbOne[i] =
+            colors[i].pRed * colors[i + 1].pGrn +
+            colors[i].pGrn * colors[i + 1].pBlu +
+            colors[i].pBlu * colors[i + 1].pRed;
+
+        pProbZero[i] =
+            colors[i].pRed * colors[i + 1].pBlu +
+            colors[i].pBlu * colors[i + 1].pGrn +
+            colors[i].pGrn * colors[i + 1].pRed;
+
+        // p(erasure) = 1 - p(one) - p(zero)
+
+   //     if (i % 8 == 0 && i > 0)
+   //     {
+   //         printf("\n");
+   //     }
+
+   //     if (pProbOne[i] > pProbZero[i])
+   //     {
+			//printf("\t\t1, p=%0.06f\n", pProbOne[i]);
+   //     }
+   //     else
+   //     {
+   //         printf("\t\t0, p=%0.06f\n", pProbZero[i]);
+   //     }
     }
 
     return true;
 }
 
-bool PointTracker::HadamardDecode(const int code, int& nDecoded)
+bool PointTracker::HadamardDecode(double *pProbZero, double *pProbOne, int& nDecoded)
 {
-    //int nMinHammingDist = 4;
-    //int nDecodedCandidate = -1;
+    // Probabilistic hadamard decoding: Compute likelihood of each codeword, choose most likely.
 
-    for (int i = 0; i < 8; i++)
+    double flBestMatchP = 0.0;
+    double flSumP = 0.0;
+
+    int nBestMatch = 0;
+
+    for (int i = 0; i < 16; i++)
     {
-        int nDist = HammingDist(code, k_hadamardTable[i]);
+        double flProb = 1.0;
+        const int* pRow = k_hadamardTable + 8 * i;
 
-        if (nDist == 0)
+        for (int j = 0; j < 8; j++)
         {
-            // found it
-            nDecoded = i;
-            return true;
+            double flProbErasure = 1.0 - pProbOne[j] - pProbZero[j];
+            double flProbBitMatch = (pRow[j] == 1 ? pProbOne[j] : pProbZero[j]);
+
+			flProb *= (flProbBitMatch + 0.5*flProbErasure);
         }
 
-        // Not worth it - see below comment
-        //if (nDist < nMinHammingDist)
-        //{
-        //    nDecodedCandidate = i;
-        //    nMinHammingDist = nDist;
-        //}
+        //printf("\t\tCW: %02d p: %f\n", i, flProb);
+
+        if (flProb > flBestMatchP)
+        {
+            flBestMatchP = flProb;
+            nBestMatch = i;
+        }
+
+        flSumP += flProb;
     }
 
-    // If there are no perfect matches, normally we'd go with the most likely candidate (min hamming distance),
-    // up to some maximum hamming distance - equivalently, if the probability of correct decoding is better than some threshold.
-    // Unfortunately, for these short 4-bit codes, a single bit of error causes ambiguity between two codes (P = 0.5).  
-    // So, if we get here, all we can do is report that something went wrong.  
+    flBestMatchP /= flSumP;
 
-    //printf("Decoding failure: Ambiguity\n");
-    return false;
-}
+    const double k_flMinMatchP = 0.90;
+    //printf("\tNormalized p(%d): %0.04f\n", nBestMatch, flBestMatchP);
 
-int PointTracker::HammingDist(const int a, const int b)
-{
-    int x = a ^ b;
-
-    unsigned int nSetBits;
-    for (nSetBits = 0; x; nSetBits++)
+    if (flBestMatchP < k_flMinMatchP)
     {
-        x &= x - 1; // clear the least significant bit set
+        // Too ambiguous
+        //printf("\tDiscard (Ambiguous)");
+        return false;
     }
 
-    return nSetBits;
+    nDecoded = nBestMatch;
+    return true;
 }
 
 bool PointTracker::DrawTracksOnVideo(std::string videoPath)
@@ -551,7 +626,7 @@ bool PointTracker::DrawTracksOnVideo(std::string videoPath)
 
         cv::imshow("Video", img);
 
-        if (cv::waitKey(30) >= 0)
+        if (cv::waitKey(16) >= 0)
             break;
 
         nFrameIdx++;

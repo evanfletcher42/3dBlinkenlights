@@ -41,6 +41,13 @@ typedef struct PointObservation
 
 } PointObservation_t;
 
+typedef enum LedColor_t
+{
+	eRed = 0,
+	eGreen = 1,
+	eBlue = 2,
+	eAmbiguous = 3
+} LedColor_t;
 
 class PointTracker
 {
@@ -63,18 +70,15 @@ public:
 	// Assign LED IDs to observations between detected sync pulses.
 	bool DecodeLEDs();
 
-	// Convert a sequence of LED color observations into 4-bit RGB codewords.
+	// Convert a sequence of LED color observations into arrays of zero/one probabilities (and erasure probability)
 	// Returns true if a codeword can be extracted from the specified range.
 	// Returns false if the specified LED is not observed over the entire specified range.  
-	bool ColorSequenceToCodes( const PointObservation_t &obs, int nSyncStartFrame, int nSyncEndFrame, int &nCodeR, int &nCodeG, int &nCodeB );
+	bool ColorSequenceToCodes( const PointObservation_t &obs, int nSyncStartFrame, int nSyncEndFrame, double* pProbZero, double* pProbOne );
 
 	// Decode a 3-bit word from a 4-bit Hadamard code.  
 	// Returns true if successful, writing the decoded word to nDecoded.  
 	// Returns false and sets nDecoded = -1 if the word cannot be decoded. 
-	bool HadamardDecode(const int code, int& nDecoded);
-
-	// Returns the hamming distance between a and b.
-	int HammingDist(const int a, const int b);
+	bool HadamardDecode(double* pProbZero, double* pProbOne, int& nDecoded);
 
 	// Debug: Draw detections on a video.
 	bool DrawTracksOnVideo(std::string videoPath);
@@ -89,27 +93,36 @@ private:
 	// Frame IDs of centers of detected sync pulses.
 	std::vector< int > m_syncCenters;
 
-	static constexpr int k_nIntensityThresh = 7;
+	static constexpr int k_nIntensityThresh = 21;
 	static constexpr float k_flMinBlobAreaPixels = 15.0f;
 	static constexpr float k_flMaxBlobAreaPixels = 1000.0f;
 	static constexpr int k_nMaxBlobMotionFrameToFrame = 30;
 
-	static constexpr int k_nMovingAverageSize = 10;
-	static constexpr int k_nMaximaSeparation = 40;
+	static constexpr int k_nMovingAverageSize = 5;
+	static constexpr int k_nMaximaSeparation = 80;
 
 	// Intensity delta between two frames required to interpret a bit as a one or a zero.
 	// Prevents labeling of bright objects that aren't blinking LEDs (e.g. background lighting).
 	static constexpr double k_flMinBitDist = 5.0;
 
-	// (8, 4, 2)_2 augmented Hadamard code
-	static constexpr int k_hadamardTable[8] = {
-		0b0000,
-		0b0101,
-		0b0011,
-		0b0110,
-		0b1111,
-		0b1010,
-		0b1100,
-		0b1001
+	// (8, 4, 4)_2 augmented Hadamard code
+	static constexpr int k_hadamardTable[16 * 8] = {
+		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 1, 0, 1, 0, 1, 0, 1,
+		0, 0, 1, 1, 0, 0, 1, 1,
+		0, 1, 1, 0, 0, 1, 1, 0,
+		0, 0, 0, 0, 1, 1, 1, 1,
+		0, 1, 0, 1, 1, 0, 1, 0,
+		0, 0, 1, 1, 1, 1, 0, 0,
+		0, 1, 1, 0, 1, 0, 0, 1,
+		1, 1, 1, 1, 1, 1, 1, 1,
+		1, 0, 1, 0, 1, 0, 1, 0,
+		1, 1, 0, 0, 1, 1, 0, 0,
+		1, 0, 0, 1, 1, 0, 0, 1,
+		1, 1, 1, 1, 0, 0, 0, 0,
+		1, 0, 1, 0, 0, 1, 0, 1,
+		1, 1, 0, 0, 0, 0, 1, 1,
+		1, 0, 0, 1, 0, 1, 1, 0
 	};
+
 };

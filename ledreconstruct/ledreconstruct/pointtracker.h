@@ -86,7 +86,7 @@ public:
 	// Set of observed LEDs in each frame.  Index like: m_observations[ nFrameIdx ][ nObservationIdxInThisFrame ]
 	std::vector< std::vector< PointObservation_t > > m_observations;
 
-	static constexpr int k_nMaxLeds = 500;
+	static constexpr int k_nMaxLeds = 5000;
 
 private:
 

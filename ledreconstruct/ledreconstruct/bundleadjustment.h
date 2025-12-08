@@ -79,7 +79,7 @@ public:
 
 	bool DrawReconstructionOnVideo(std::string videoPath);
 
-	static constexpr int k_nMaxLeds = 500;
+	static constexpr int k_nMaxLeds = 5000;
 
 	// Minimum number of map point observations required to initialize the pose of a new camera.
 	// Should be >= 4.  

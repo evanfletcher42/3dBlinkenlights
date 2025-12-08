@@ -128,7 +128,7 @@ void CPointsVisualizer::UpdateBoundingBox()
 	}
 
 	// Scan through all points
-	for (int i = 0; i < 500; i++)
+	for (int i = 0; i < 5000; i++)
 	{
 		if (!m_bLedsInitialized[i])
 			continue;
@@ -175,7 +175,7 @@ void CPointsVisualizer::EraseImage()
 
 void CPointsVisualizer::DrawTrackedPoints()
 {
-	for (int i = 0; i < 500; i++)
+	for (int i = 0; i < 5000; i++)
 	{
 		if (!m_bLedsInitialized[i])
 			continue;

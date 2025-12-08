@@ -67,8 +67,8 @@ private:
 
 	// Local copies of camera and point poses
 	std::unordered_map< int, std::array<double, 6> > m_cameraFromWorldPoses;
-	double m_ledPoints[500][3];
-	bool m_bLedsInitialized[500];
+	double m_ledPoints[5000][3];
+	bool m_bLedsInitialized[5000];
 
 	// new-data-available flag
 	bool m_bNewDataAvailable;

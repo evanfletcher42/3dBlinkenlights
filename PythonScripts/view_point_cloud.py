@@ -69,7 +69,7 @@ def main():
     with open(json_path) as json_file:
         json_blob = json.load(json_file)
 
-        points = np.array(json_blob["leds"], dtype=np.float)
+        points = np.array(json_blob["leds"], dtype=float)
 
         plot(points)
 
